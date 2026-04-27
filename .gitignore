@@ -8,3 +8,4 @@ __pycache__/
 .claude/plans/
 Claude-slash-commands.txt
 Prompts.txt
+ClFileInstructions.txt
