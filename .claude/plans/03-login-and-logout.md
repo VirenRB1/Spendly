@@ -6,7 +6,7 @@ After Step 2 the app can create new users with werkzeug-hashed passwords, but `/
 The session key chosen here — `session["user_id"]` — becomes the contract every later step reads. We must not introduce parallel keys.
 
 ## Files to modify
-- `app.py` — add `session` import + `check_password_hash`; set `app.secret_key`; convert `login()` to GET/POST; replace stub `logout()`.
+- `app.py` — add `session` import + `check_password_hash`; set `app.secret_key`; convert `login()` to GET/POST; replace stub `logout()`; add already-logged-in guard at the top of both `login()` and `register()`.
 - `templates/login.html` — pre-fill the email field on validation error.
 - `templates/base.html` — auth-aware navbar.
 
@@ -45,11 +45,14 @@ Why a fallback default: this is a learning project run from a student laptop wit
 
 ## Change 2 — `app.py`: GET/POST login view
 
-Replace the existing `login()` function (currently lines 70–72):
+Replace the existing `login()` function (currently lines 70–72). The first thing the view does is short-circuit out for already-logged-in visitors so the auth forms are never shown to them:
 
 ```python
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    if session.get("user_id"):
+        return redirect(url_for("profile"))
+
     if request.method == "GET":
         return render_template("login.html")
 
@@ -82,6 +85,23 @@ Notes:
 - `email` is passed back to the template on every error path; `password` never is.
 - Reuses `get_user_by_email` already in `database/db.py:70`. No new SQL.
 - Redirects to `url_for("profile")` — `/profile` is currently a stub returning a string, but `url_for` resolves on the route function name, not on the response, so this is fine. Step 4 will replace the stub.
+
+## Change 2b — `app.py`: already-logged-in guard for `register()`
+
+Add the same short-circuit as the very first line inside `register()` (currently the `if request.method == "GET":` line is the first thing it does):
+
+```python
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if session.get("user_id"):
+        return redirect(url_for("profile"))
+
+    if request.method == "GET":
+        return render_template("register.html")
+    # ... rest unchanged
+```
+
+Why guard POST too: a logged-in user submitting the registration form would otherwise hit the duplicate-email branch (their existing email) or, worse, create a second account under a different email and silently switch identity. The early redirect makes the route a no-op for authenticated requests.
 
 ## Change 3 — `app.py`: real logout
 
@@ -159,6 +179,10 @@ Use `curl` with a cookie jar so the session cookie persists across requests.
 | Navbar logged in | Browser: log in, hit `/` | Navbar shows `Profile` and `Logout` |
 | Navbar logged out | Browser: log out, hit `/` | Navbar shows `Sign in` and `Get started` |
 | App startup | `python app.py` | Boots on port 5001, no `RuntimeError` about secret key |
+| GET /login while logged in | `curl -i -b jar.txt http://127.0.0.1:5001/login` | 302 → `/profile`, no form rendered |
+| GET /register while logged in | `curl -i -b jar.txt http://127.0.0.1:5001/register` | 302 → `/profile`, no form rendered |
+| POST /login while logged in | `curl -i -b jar.txt -X POST -d "email=x&password=y" http://127.0.0.1:5001/login` | 302 → `/profile`, session unchanged |
+| POST /register while logged in | `curl -i -b jar.txt -X POST -d "name=A&email=new@x.com&password=password123" http://127.0.0.1:5001/register` | 302 → `/profile`, no new row in `users` |
 
 Inspect session payload to confirm `user_id` is the integer row id (not the email or anything else):
 

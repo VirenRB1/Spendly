@@ -8,10 +8,12 @@ Wire up real session-based authentication for Spendly. Today `/login` only rende
 - **Step 2 — Registration**: ensures real users exist with werkzeug-hashed passwords so login has something to authenticate against.
 
 ## Routes
-- `POST /login` — accepts `email` and `password` from the login form; verifies the password hash; on success stores `session["user_id"]` and redirects to `/profile`; on failure re-renders `login.html` with a generic error. Access level: **public**.
+- `POST /login` — accepts `email` and `password` from the login form; verifies the password hash; on success stores `session["user_id"]` and redirects to `/profile`; on failure re-renders `login.html` with a generic error. Access level: **public** (but if the visitor is already logged in, redirect to `/profile`).
 - `GET /logout` — clears the session and redirects to `/`. Access level: **logged-in** (also safe to hit when logged out — just no-ops and redirects).
 
 The existing `GET /login` route stays unchanged (refactor `login()` to dispatch on `request.method`). The `/logout` placeholder gets replaced with a real implementation.
+
+Both `GET /login` and `GET /register` (and their POST variants) must short-circuit and redirect logged-in visitors to `/profile`. There is no value in showing auth forms to someone who is already authenticated, and submitting the form would otherwise either fail silently or create a duplicate-account error.
 
 ## Database changes
 No database changes. The `users` table already has `id`, `email`, and `password_hash` — everything needed to authenticate. Sessions are signed cookies; nothing is persisted server-side.
@@ -23,7 +25,7 @@ No database changes. The `users` table already has `id`, `email`, and `password_
   - `templates/base.html` — make the navbar auth-aware. When `session["user_id"]` is set, show a link to `/profile` and a `Logout` link instead of `Sign in` / `Get started`. Use Jinja's `session` global directly (Flask exposes it to templates).
 
 ## Files to change
-- `app.py` — set `app.secret_key`; convert `login()` into a GET/POST view; replace the stub `logout()` with `session.clear()` + redirect; add `session` to the Flask import line.
+- `app.py` — set `app.secret_key`; convert `login()` into a GET/POST view; replace the stub `logout()` with `session.clear()` + redirect; add `session` to the Flask import line; add an early "already-logged-in" redirect at the top of both `login()` and `register()`.
 - `templates/login.html` — add `value="{{ email or '' }}"` to the email input.
 - `templates/base.html` — conditional nav-links block.
 
@@ -45,6 +47,7 @@ No new dependencies. `werkzeug.security.check_password_hash` is a sibling of the
 - On successful login: `session.clear()` first (drop any stale state), then set `session["user_id"]` to the user's `id`, then redirect to `/profile`.
 - On logout: call `session.clear()` and redirect to `/` — do not redirect back to `/login` (UX nicer when logged-out lands on the marketing page).
 - `session["user_id"]` is the **single source of truth** for "is this request authenticated". Future steps will consume this; don't introduce parallel session keys (`logged_in` flags, `user_email`, etc.).
+- Already-logged-in guard: the very first line inside both `login()` and `register()` must check `session.get("user_id")` and redirect to `/profile` if it is set. This applies to both GET and POST — POSTing to `/login` or `/register` from an authenticated session also redirects.
 - Navbar logic in `base.html` uses `{% if session.user_id %}` — do not call any helpers or read the DB from the template.
 - Use `url_for('login')`, `url_for('logout')`, `url_for('profile')`, `url_for('landing')` for every internal link — no hardcoded paths.
 
@@ -65,3 +68,6 @@ No new dependencies. `werkzeug.security.check_password_hash` is a sibling of the
   - Logged in → shows a `Profile` link and a `Logout` link.
 - [ ] App starts on port 5001 with no errors (`python app.py`); no `RuntimeError: The session is unavailable because no secret key was set` is raised.
 - [ ] No SQL is written inline in `app.py` for login — uses `get_user_by_email` from `database/db.py`.
+- [ ] Visiting `GET /login` while already logged in redirects (302) to `/profile` without rendering the form.
+- [ ] Visiting `GET /register` while already logged in redirects (302) to `/profile` without rendering the form.
+- [ ] POSTing to `/login` or `/register` while already logged in redirects (302) to `/profile` and does not create a new user or change the session.
