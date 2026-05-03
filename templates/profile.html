@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Profile — Spendly{% endblock %}
+
+{% block content %}
+<section class="profile-section">
+    <div class="profile-inner">
+
+        <header class="profile-header">
+            <div class="profile-avatar" aria-hidden="true">
+                {{ user.name[0]|upper }}
+            </div>
+            <div class="profile-identity">
+                <h1 class="profile-name">{{ user.name }}</h1>
+                <p class="profile-email">{{ user.email }}</p>
+                <p class="profile-meta">Member since {{ member_since }}</p>
+            </div>
+        </header>
+
+        <div class="profile-grid">
+            <article class="profile-card">
+                <header class="profile-card-header">
+                    <h2 class="profile-card-title">Recent expenses</h2>
+                    <a href="{{ url_for('add_expense') }}" class="profile-card-link">Add expense</a>
+                </header>
+                <div class="profile-empty">
+                    <p class="profile-empty-title">No expenses yet</p>
+                    <p class="profile-empty-body">Add your first expense to see it appear here.</p>
+                </div>
+            </article>
+
+            <article class="profile-card">
+                <header class="profile-card-header">
+                    <h2 class="profile-card-title">This month at a glance</h2>
+                </header>
+                <div class="profile-summary">
+                    <div class="profile-summary-row">
+                        <span class="profile-summary-label">Total spent</span>
+                        <span class="profile-summary-value">&#8377;0</span>
+                    </div>
+                    <div class="profile-summary-row">
+                        <span class="profile-summary-label">Top category</span>
+                        <span class="profile-summary-value profile-summary-muted">&mdash;</span>
+                    </div>
+                    <div class="profile-summary-row">
+                        <span class="profile-summary-label">Entries logged</span>
+                        <span class="profile-summary-value">0</span>
+                    </div>
+                </div>
+                <p class="profile-empty-body profile-empty-footnote">
+                    Your monthly snapshot will populate as you log expenses.
+                </p>
+            </article>
+        </div>
+
+    </div>
+</section>
+{% endblock %}
