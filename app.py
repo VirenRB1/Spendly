@@ -5,7 +5,13 @@ from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from database.db import get_db, init_db, seed_db, create_user, get_user_by_email, get_user_by_id
+from database.db import get_db, init_db, seed_db, create_user, get_user_by_email
+from database.queries import (
+    get_user_by_id,
+    get_recent_transactions,
+    get_summary_stats,
+    get_category_breakdown,
+)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SPENDLY_SECRET_KEY", "dev-only-change-me")
@@ -135,8 +141,21 @@ def profile():
         session.clear()
         return redirect(url_for("login"))
 
-    member_since = datetime.fromisoformat(user["created_at"]).strftime("%B %Y")
-    return render_template("profile.html", user=user, member_since=member_since)
+    # <SECTION: TRANSACTIONS>
+    recent_transactions = get_recent_transactions(user_id)
+    # <SECTION: SUMMARY>
+    summary = get_summary_stats(user_id)
+    # <SECTION: CATEGORY>
+    category_breakdown = get_category_breakdown(user_id)
+
+    return render_template(
+        "profile.html",
+        user=user,
+        member_since=user["member_since"],
+        recent_transactions=recent_transactions,
+        summary=summary,
+        category_breakdown=category_breakdown,
+    )
 
 
 @app.route("/expenses/add")
