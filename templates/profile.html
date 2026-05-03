@@ -23,10 +23,26 @@
                     <h2 class="profile-card-title">Recent expenses</h2>
                     <a href="{{ url_for('add_expense') }}" class="profile-card-link">Add expense</a>
                 </header>
-                <div class="profile-empty">
-                    <p class="profile-empty-title">No expenses yet</p>
-                    <p class="profile-empty-body">Add your first expense to see it appear here.</p>
-                </div>
+                {# <SECTION: TRANSACTIONS> #}
+                {% for tx in recent_transactions %}
+                    {% if loop.first %}
+                    <div class="profile-tx-list">
+                    {% endif %}
+                        <div class="profile-tx-row">
+                            <span class="profile-tx-date">{{ tx.date }}</span>
+                            <span class="profile-tx-desc">{{ tx.description or tx.category }}</span>
+                            <span class="profile-tx-cat">{{ tx.category }}</span>
+                            <span class="profile-tx-amount">&#8377;{{ "%.2f"|format(tx.amount) }}</span>
+                        </div>
+                    {% if loop.last %}
+                    </div>
+                    {% endif %}
+                {% else %}
+                    <div class="profile-empty">
+                        <p class="profile-empty-title">No expenses yet</p>
+                        <p class="profile-empty-body">Add your first expense to see it appear here.</p>
+                    </div>
+                {% endfor %}
             </article>
 
             <article class="profile-card">
@@ -34,17 +50,18 @@
                     <h2 class="profile-card-title">This month at a glance</h2>
                 </header>
                 <div class="profile-summary">
+                    {# <SECTION: SUMMARY> #}
                     <div class="profile-summary-row">
                         <span class="profile-summary-label">Total spent</span>
-                        <span class="profile-summary-value">&#8377;0</span>
+                        <span class="profile-summary-value">&#8377;{{ "%.2f"|format(summary.total_spent) }}</span>
                     </div>
                     <div class="profile-summary-row">
                         <span class="profile-summary-label">Top category</span>
-                        <span class="profile-summary-value profile-summary-muted">&mdash;</span>
+                        <span class="{% if summary.top_category == "—" %}profile-summary-value profile-summary-muted{% else %}profile-summary-value{% endif %}">{{ summary.top_category }}</span>
                     </div>
                     <div class="profile-summary-row">
                         <span class="profile-summary-label">Entries logged</span>
-                        <span class="profile-summary-value">0</span>
+                        <span class="profile-summary-value">{{ summary.transaction_count }}</span>
                     </div>
                 </div>
                 <p class="profile-empty-body profile-empty-footnote">
@@ -52,6 +69,29 @@
                 </p>
             </article>
         </div>
+
+        <article class="profile-card profile-card-wide">
+            <header class="profile-card-header">
+                <h2 class="profile-card-title">Spending by category</h2>
+            </header>
+            {# <SECTION: CATEGORY> #}
+            {% for c in category_breakdown %}
+                {% if loop.first %}
+                <div class="profile-cat-list">
+                {% endif %}
+                    <div class="profile-cat-row">
+                        <span class="profile-cat-name">{{ c.name }}</span>
+                        <div class="profile-cat-bar-track"><div class="profile-cat-bar-fill" style="width: {{ c.pct }}%;"></div></div>
+                        <span class="profile-cat-amount">&#8377;{{ "%.2f"|format(c.amount) }}</span>
+                        <span class="profile-cat-pct">{{ c.pct }}%</span>
+                    </div>
+                {% if loop.last %}
+                </div>
+                {% endif %}
+            {% else %}
+                <p class="profile-empty-body">No category data yet — add your first expense to see your breakdown.</p>
+            {% endfor %}
+        </article>
 
     </div>
 </section>
