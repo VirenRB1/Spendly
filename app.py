@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 from flask import Flask, render_template, request, redirect, url_for, session
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -16,9 +16,42 @@ from database.queries import (
 app = Flask(__name__)
 app.secret_key = os.environ.get("SPENDLY_SECRET_KEY", "dev-only-change-me")
 
+PAGE_SIZE = 15
+MAX_PAGE = 1000
+
 with app.app_context():
     init_db()
     seed_db()
+
+
+def _build_quick_ranges(anchor):
+    """Return the four quick-range presets anchored at `anchor` (a date)."""
+    # 30 days ≈ 1 month and 182 days ≈ 6 months — exact calendar months would
+    # need dateutil.relativedelta which isn't in the project's dependencies.
+    return [
+        {"key": "1w",  "label": "1 week",   "start": (anchor - timedelta(days=7)).isoformat(),   "end": anchor.isoformat()},
+        {"key": "1m",  "label": "1 month",  "start": (anchor - timedelta(days=30)).isoformat(),  "end": anchor.isoformat()},
+        {"key": "6m",  "label": "6 months", "start": (anchor - timedelta(days=182)).isoformat(), "end": anchor.isoformat()},
+        {"key": "all", "label": "All time", "start": "",                                         "end": ""},
+    ]
+
+
+def _parse_date_range(raw_start, raw_end):
+    """Return (start, end, error). Empty inputs are valid (open-ended).
+    On any error, returns (None, None, message) so callers fall back to
+    unfiltered data."""
+    def parse(value):
+        if not value:
+            return None
+        return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+    try:
+        start = parse(raw_start)
+        end = parse(raw_end)
+    except ValueError:
+        return None, None, "Please enter valid dates in YYYY-MM-DD format."
+    if start and end and end < start:
+        return None, None, "End date must be on or after start date."
+    return start, end, None
 
 
 # ------------------------------------------------------------------ #
@@ -141,12 +174,39 @@ def profile():
         session.clear()
         return redirect(url_for("login"))
 
+    raw_start = request.args.get("start", "").strip()
+    raw_end = request.args.get("end", "").strip()
+    start, end, filter_error = _parse_date_range(raw_start, raw_end)
+
+    try:
+        page = max(1, min(MAX_PAGE, int(request.args.get("page", 1))))
+    except ValueError:
+        page = 1
+
+    offset = (page - 1) * PAGE_SIZE
+
     # <SECTION: TRANSACTIONS>
-    recent_transactions = get_recent_transactions(user_id)
+    recent_transactions = get_recent_transactions(
+        user_id, limit=PAGE_SIZE, offset=offset, start=start, end=end
+    )
     # <SECTION: SUMMARY>
-    summary = get_summary_stats(user_id)
+    summary = get_summary_stats(user_id, start=start, end=end)
     # <SECTION: CATEGORY>
-    category_breakdown = get_category_breakdown(user_id)
+    category_breakdown = get_category_breakdown(user_id, start=start, end=end)
+
+    total_tx = summary["transaction_count"]
+    has_prev = page > 1
+    has_next = page * PAGE_SIZE < total_tx
+
+    echoed_start = raw_start if not filter_error else ""
+    echoed_end = raw_end if not filter_error else ""
+
+    quick_ranges = _build_quick_ranges(date.today())
+    active_quick_key = next(
+        (r["key"] for r in quick_ranges
+         if r["start"] == echoed_start and r["end"] == echoed_end),
+        None,
+    )
 
     return render_template(
         "profile.html",
@@ -155,6 +215,15 @@ def profile():
         recent_transactions=recent_transactions,
         summary=summary,
         category_breakdown=category_breakdown,
+        start=echoed_start,
+        end=echoed_end,
+        filter_error=filter_error,
+        filter_active=bool(start or end),
+        page=page,
+        has_prev=has_prev,
+        has_next=has_next,
+        quick_ranges=quick_ranges,
+        active_quick_key=active_quick_key,
     )
 
 
@@ -174,4 +243,5 @@ def delete_expense(id):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5001)
+    debug = os.environ.get("FLASK_DEBUG", "1") == "1"
+    app.run(debug=debug, port=5001)

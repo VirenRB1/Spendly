@@ -17,6 +17,34 @@
             </div>
         </header>
 
+        <section class="profile-filter">
+            <nav class="profile-filter-tabs" aria-label="Quick date ranges">
+                {% for r in quick_ranges %}
+                    <a class="profile-filter-tab{% if active_quick_key == r.key %} profile-filter-tab-active{% endif %}"
+                       href="{{ url_for('profile', start=r.start or none, end=r.end or none) }}">{{ r.label }}</a>
+                {% endfor %}
+            </nav>
+            {% if filter_error %}
+                <div class="profile-filter-error">{{ filter_error }}</div>
+            {% endif %}
+            <form class="profile-filter-form" method="get" action="{{ url_for('profile') }}">
+                <div class="profile-filter-field">
+                    <label for="filter-start">From</label>
+                    <input id="filter-start" class="form-input" type="date" name="start" value="{{ start }}">
+                </div>
+                <div class="profile-filter-field">
+                    <label for="filter-end">To</label>
+                    <input id="filter-end" class="form-input" type="date" name="end" value="{{ end }}">
+                </div>
+                <div class="profile-filter-actions">
+                    <button type="submit" class="btn-submit profile-filter-apply">Apply</button>
+                    {% if filter_active %}
+                        <a class="profile-filter-clear" href="{{ url_for('profile') }}">Clear</a>
+                    {% endif %}
+                </div>
+            </form>
+        </section>
+
         <div class="profile-grid">
             <article class="profile-card">
                 <header class="profile-card-header">
@@ -39,10 +67,27 @@
                     {% endif %}
                 {% else %}
                     <div class="profile-empty">
-                        <p class="profile-empty-title">No expenses yet</p>
-                        <p class="profile-empty-body">Add your first expense to see it appear here.</p>
+                        {% if filter_active %}
+                            <p class="profile-empty-title">No expenses in this range</p>
+                            <p class="profile-empty-body">Try widening the date range or clearing the filter.</p>
+                        {% else %}
+                            <p class="profile-empty-title">No expenses yet</p>
+                            <p class="profile-empty-body">Add your first expense to see it appear here.</p>
+                        {% endif %}
                     </div>
                 {% endfor %}
+                {% if has_prev or has_next %}
+                    <nav class="profile-pagination">
+                        {% if has_prev %}
+                            <a class="profile-pagination-link" href="{{ url_for('profile', start=start or none, end=end or none, page=page-1) }}">Previous</a>
+                        {% else %}
+                            <span></span>
+                        {% endif %}
+                        {% if has_next %}
+                            <a class="profile-pagination-link" href="{{ url_for('profile', start=start or none, end=end or none, page=page+1) }}">Next</a>
+                        {% endif %}
+                    </nav>
+                {% endif %}
             </article>
 
             <article class="profile-card">
@@ -89,7 +134,11 @@
                 </div>
                 {% endif %}
             {% else %}
-                <p class="profile-empty-body">No category data yet — add your first expense to see your breakdown.</p>
+                {% if filter_active %}
+                    <p class="profile-empty-body">No category data in this range — try widening it or clearing the filter.</p>
+                {% else %}
+                    <p class="profile-empty-body">No category data yet — add your first expense to see your breakdown.</p>
+                {% endif %}
             {% endfor %}
         </article>
 
