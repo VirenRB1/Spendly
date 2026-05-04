@@ -1,11 +1,34 @@
 """Profile-page data helpers — one function per UI concern.
 
 Each helper opens its own connection via database.db.get_db() and closes it
-before returning. SQL is parameterised — never f-string into queries.
+before returning. User values are always bound as `?` parameters; any
+dynamic WHERE fragment is assembled from static string constants only —
+never from user input.
 """
 from datetime import datetime
 
 from database.db import get_db, get_user_by_id as _db_get_user_by_id
+
+
+def _date_where(start, end):
+    """Return a WHERE-clause fragment built from static string constants only.
+    Do not pass user-controlled column names or operators into this helper —
+    only the booleans `start` / `end` decide which fragments are appended."""
+    where = ["user_id = ?"]
+    if start:
+        where.append("date >= ?")
+    if end:
+        where.append("date <= ?")
+    return " AND ".join(where)
+
+
+def _date_params(user_id, start, end):
+    params = [user_id]
+    if start:
+        params.append(start)
+    if end:
+        params.append(end)
+    return params
 
 
 def get_user_by_id(user_id):
@@ -25,35 +48,59 @@ def get_user_by_id(user_id):
 
 
 # <SECTION: TRANSACTIONS>
-def get_recent_transactions(user_id, limit=10):
-    """Return the most recent expenses for a user as a list of dicts."""
+def get_recent_transactions(user_id, limit=10, offset=0, start=None, end=None):
+    """Return expenses for a user as a list of dicts, newest first.
+
+    Optional `start` / `end` (ISO YYYY-MM-DD strings) bound the date range.
+    `offset` supports pagination — combined with `limit` the caller can page
+    through results 15 at a time.
+    """
+    where = _date_where(start, end)
+    params = _date_params(user_id, start, end) + [limit, offset]
     conn = get_db()
     try:
         rows = conn.execute(
             "SELECT id, date, description, category, amount "
-            "FROM expenses WHERE user_id = ? "
-            "ORDER BY date DESC, id DESC LIMIT ?",
-            (user_id, limit),
+            "FROM expenses WHERE " + where + " "
+            "ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
+            params,
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
         conn.close()
 
 
+def count_transactions(user_id, start=None, end=None):
+    """Return the total number of expenses matching the optional date range."""
+    where = _date_where(start, end)
+    params = _date_params(user_id, start, end)
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM expenses WHERE " + where,
+            params,
+        ).fetchone()
+        return int(row["cnt"]) if row is not None else 0
+    finally:
+        conn.close()
+
+
 # <SECTION: SUMMARY>
-def get_summary_stats(user_id):
+def get_summary_stats(user_id, start=None, end=None):
     """Return total spent, transaction count, and top category for a user."""
+    where = _date_where(start, end)
+    params = _date_params(user_id, start, end)
     conn = get_db()
     try:
         totals = conn.execute(
             "SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt "
-            "FROM expenses WHERE user_id = ?",
-            (user_id,),
+            "FROM expenses WHERE " + where,
+            params,
         ).fetchone()
         top_row = conn.execute(
-            "SELECT category FROM expenses WHERE user_id = ? "
+            "SELECT category FROM expenses WHERE " + where + " "
             "GROUP BY category ORDER BY SUM(amount) DESC, category ASC LIMIT 1",
-            (user_id,),
+            params,
         ).fetchone()
         total = totals["total"] if totals is not None else 0
         cnt = totals["cnt"] if totals is not None else 0
@@ -68,20 +115,22 @@ def get_summary_stats(user_id):
 
 
 # <SECTION: CATEGORY>
-def get_category_breakdown(user_id):
+def get_category_breakdown(user_id, start=None, end=None):
     """Return a list of category dicts with name, amount, and integer pct.
 
     Percentages are rounded per-row, then the largest row's pct is adjusted
     so the breakdown sums to exactly 100. Empty user → [].
     """
+    where = _date_where(start, end)
+    params = _date_params(user_id, start, end)
     conn = get_db()
     try:
         rows = conn.execute(
             "SELECT category, SUM(amount) AS amount "
-            "FROM expenses WHERE user_id = ? "
+            "FROM expenses WHERE " + where + " "
             "GROUP BY category "
             "ORDER BY amount DESC, category ASC",
-            (user_id,),
+            params,
         ).fetchall()
     finally:
         conn.close()
