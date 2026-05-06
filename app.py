@@ -1,11 +1,19 @@
+import math
 import os
 import sqlite3
 from datetime import datetime, date, timedelta
 
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from database.db import get_db, init_db, seed_db, create_user, get_user_by_email
+from database.db import (
+    get_db,
+    init_db,
+    seed_db,
+    create_user,
+    create_expense,
+    get_user_by_email,
+)
 from database.queries import (
     get_user_by_id,
     get_recent_transactions,
@@ -18,6 +26,17 @@ app.secret_key = os.environ.get("SPENDLY_SECRET_KEY", "dev-only-change-me")
 
 PAGE_SIZE = 15
 MAX_PAGE = 1000
+
+CATEGORIES = (
+    "Food",
+    "Transport",
+    "Bills",
+    "Health",
+    "Entertainment",
+    "Shopping",
+    "Other",
+)
+DESCRIPTION_MAX_LENGTH = 200
 
 with app.app_context():
     init_db()
@@ -227,9 +246,71 @@ def profile():
     )
 
 
-@app.route("/expenses/add")
+@app.route("/analytics")
+def analytics():
+    if not session.get("user_id"):
+        return redirect(url_for("login"))
+    return render_template("analytics.html")
+
+
+@app.route("/expenses/add", methods=["GET", "POST"])
 def add_expense():
-    return "Add expense — coming in Step 7"
+    user_id = session.get("user_id")
+    if not user_id:
+        return redirect(url_for("login"))
+
+    today = date.today().isoformat()
+
+    if request.method == "GET":
+        return render_template(
+            "add_expense.html",
+            categories=CATEGORIES,
+            today=today,
+        )
+
+    raw_amount = request.form.get("amount", "").strip()
+    raw_category = request.form.get("category", "").strip()
+    raw_date = request.form.get("date", "").strip()
+    raw_description = request.form.get("description", "").strip()
+
+    def rerender(message):
+        return render_template(
+            "add_expense.html",
+            categories=CATEGORIES,
+            today=today,
+            error=message,
+            amount=raw_amount,
+            category=raw_category,
+            date=raw_date,
+            description=raw_description,
+        )
+
+    try:
+        amount = float(raw_amount)
+    except ValueError:
+        return rerender("Amount must be a number.")
+    if not math.isfinite(amount) or amount <= 0:
+        return rerender("Amount must be greater than zero.")
+
+    if raw_category not in CATEGORIES:
+        return rerender("Please choose a category from the list.")
+
+    try:
+        parsed_date = datetime.strptime(raw_date, "%Y-%m-%d").date()
+    except ValueError:
+        return rerender("Please enter a valid date in YYYY-MM-DD format.")
+    if parsed_date > date.today():
+        return rerender("Date cannot be in the future.")
+
+    if len(raw_description) > DESCRIPTION_MAX_LENGTH:
+        return rerender(
+            f"Description must be {DESCRIPTION_MAX_LENGTH} characters or fewer."
+        )
+    description = raw_description or None
+
+    create_expense(user_id, amount, raw_category, parsed_date.isoformat(), description)
+    flash("Expense added successfully.", "success")
+    return redirect(url_for("profile"))
 
 
 @app.route("/expenses/<int:id>/edit")

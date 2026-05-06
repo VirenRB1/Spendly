@@ -97,3 +97,16 @@ def get_user_by_id(user_id):
     ).fetchone()
     conn.close()
     return row
+
+
+def create_expense(user_id, amount, category, date, description):
+    conn = get_db()
+    cursor = conn.execute(
+        "INSERT INTO expenses (user_id, amount, category, date, description) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (user_id, amount, category, date, description),
+    )
+    conn.commit()
+    expense_id = cursor.lastrowid
+    conn.close()
+    return expense_id
