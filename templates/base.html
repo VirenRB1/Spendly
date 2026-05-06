@@ -22,6 +22,7 @@
                 {% if session.user_id %}
                     <a href="{{ url_for('profile') }}" class="{% if request.endpoint == 'profile' %}nav-link-active{% endif %}">Profile</a>
                     <a href="{{ url_for('analytics') }}" class="{% if request.endpoint == 'analytics' %}nav-link-active{% endif %}">Analytics</a>
+                    <a href="{{ url_for('add_expense') }}" class="{% if request.endpoint == 'add_expense' %}nav-link-active{% endif %}">Add expense</a>
                     <a href="{{ url_for('logout') }}" class="nav-cta">Logout</a>
                 {% else %}
                     <a href="{{ url_for('login') }}">Sign in</a>
@@ -30,6 +31,16 @@
             </div>
         </div>
     </nav>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flash-stack" role="status" aria-live="polite">
+                {% for category, message in messages %}
+                    <div class="flash-toast flash-toast-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
 
     <main class="main-content">
         {% block content %}{% endblock %}
