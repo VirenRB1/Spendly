@@ -3,15 +3,25 @@ import os
 import sqlite3
 from datetime import datetime, date, timedelta
 
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    session,
+    flash,
+    abort,
+)
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from database.db import (
-    get_db,
     init_db,
     seed_db,
     create_user,
     create_expense,
+    get_expense_by_id,
+    update_expense,
     get_user_by_email,
 )
 from database.queries import (
@@ -48,10 +58,25 @@ def _build_quick_ranges(anchor):
     # 30 days ≈ 1 month and 182 days ≈ 6 months — exact calendar months would
     # need dateutil.relativedelta which isn't in the project's dependencies.
     return [
-        {"key": "1w",  "label": "1 week",   "start": (anchor - timedelta(days=7)).isoformat(),   "end": anchor.isoformat()},
-        {"key": "1m",  "label": "1 month",  "start": (anchor - timedelta(days=30)).isoformat(),  "end": anchor.isoformat()},
-        {"key": "6m",  "label": "6 months", "start": (anchor - timedelta(days=182)).isoformat(), "end": anchor.isoformat()},
-        {"key": "all", "label": "All time", "start": "",                                         "end": ""},
+        {
+            "key": "1w",
+            "label": "1 week",
+            "start": (anchor - timedelta(days=7)).isoformat(),
+            "end": anchor.isoformat(),
+        },
+        {
+            "key": "1m",
+            "label": "1 month",
+            "start": (anchor - timedelta(days=30)).isoformat(),
+            "end": anchor.isoformat(),
+        },
+        {
+            "key": "6m",
+            "label": "6 months",
+            "start": (anchor - timedelta(days=182)).isoformat(),
+            "end": anchor.isoformat(),
+        },
+        {"key": "all", "label": "All time", "start": "", "end": ""},
     ]
 
 
@@ -59,10 +84,12 @@ def _parse_date_range(raw_start, raw_end):
     """Return (start, end, error). Empty inputs are valid (open-ended).
     On any error, returns (None, None, message) so callers fall back to
     unfiltered data."""
+
     def parse(value):
         if not value:
             return None
         return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+
     try:
         start = parse(raw_start)
         end = parse(raw_end)
@@ -76,6 +103,7 @@ def _parse_date_range(raw_start, raw_end):
 # ------------------------------------------------------------------ #
 # Routes                                                              #
 # ------------------------------------------------------------------ #
+
 
 @app.route("/")
 def landing():
@@ -166,6 +194,7 @@ def login():
 # Placeholder routes — students will implement these                  #
 # ------------------------------------------------------------------ #
 
+
 @app.route("/terms")
 def terms():
     return render_template("terms.html")
@@ -222,8 +251,11 @@ def profile():
 
     quick_ranges = _build_quick_ranges(date.today())
     active_quick_key = next(
-        (r["key"] for r in quick_ranges
-         if r["start"] == echoed_start and r["end"] == echoed_end),
+        (
+            r["key"]
+            for r in quick_ranges
+            if r["start"] == echoed_start and r["end"] == echoed_end
+        ),
         None,
     )
 
@@ -251,6 +283,38 @@ def analytics():
     if not session.get("user_id"):
         return redirect(url_for("login"))
     return render_template("analytics.html")
+
+
+def _validate_expense_form(raw_amount, raw_category, raw_date, raw_description):
+    """Validate the shared expense form fields. Returns (amount, category,
+    parsed_date, description, error). error is None on success."""
+    try:
+        amount = float(raw_amount)
+    except ValueError:
+        return None, None, None, None, "Amount must be a number."
+    if not math.isfinite(amount) or amount <= 0:
+        return None, None, None, None, "Amount must be greater than zero."
+
+    if raw_category not in CATEGORIES:
+        return None, None, None, None, "Please choose a category from the list."
+
+    try:
+        parsed_date = datetime.strptime(raw_date, "%Y-%m-%d").date()
+    except ValueError:
+        return None, None, None, None, "Please enter a valid date in YYYY-MM-DD format."
+    if parsed_date > date.today():
+        return None, None, None, None, "Date cannot be in the future."
+
+    if len(raw_description) > DESCRIPTION_MAX_LENGTH:
+        return (
+            None,
+            None,
+            None,
+            None,
+            f"Description must be {DESCRIPTION_MAX_LENGTH} characters or fewer.",
+        )
+
+    return amount, raw_category, parsed_date, raw_description or None, None
 
 
 @app.route("/expenses/add", methods=["GET", "POST"])
@@ -285,37 +349,68 @@ def add_expense():
             description=raw_description,
         )
 
-    try:
-        amount = float(raw_amount)
-    except ValueError:
-        return rerender("Amount must be a number.")
-    if not math.isfinite(amount) or amount <= 0:
-        return rerender("Amount must be greater than zero.")
+    amount, category, parsed_date, description, error = _validate_expense_form(
+        raw_amount, raw_category, raw_date, raw_description
+    )
+    if error:
+        return rerender(error)
 
-    if raw_category not in CATEGORIES:
-        return rerender("Please choose a category from the list.")
-
-    try:
-        parsed_date = datetime.strptime(raw_date, "%Y-%m-%d").date()
-    except ValueError:
-        return rerender("Please enter a valid date in YYYY-MM-DD format.")
-    if parsed_date > date.today():
-        return rerender("Date cannot be in the future.")
-
-    if len(raw_description) > DESCRIPTION_MAX_LENGTH:
-        return rerender(
-            f"Description must be {DESCRIPTION_MAX_LENGTH} characters or fewer."
-        )
-    description = raw_description or None
-
-    create_expense(user_id, amount, raw_category, parsed_date.isoformat(), description)
+    create_expense(user_id, amount, category, parsed_date.isoformat(), description)
     flash("Expense added successfully.", "success")
     return redirect(url_for("profile"))
 
 
-@app.route("/expenses/<int:id>/edit")
-def edit_expense(id):
-    return "Edit expense — coming in Step 8"
+@app.route("/expenses/<int:expense_id>/edit", methods=["GET", "POST"])
+def edit_expense(expense_id):
+    user_id = session.get("user_id")
+    if not user_id:
+        return redirect(url_for("login"))
+
+    expense = get_expense_by_id(expense_id)
+    if expense is None:
+        abort(404)
+    if expense["user_id"] != user_id:
+        abort(403)
+
+    today = date.today().isoformat()
+
+    if request.method == "GET":
+        return render_template(
+            "edit_expense.html",
+            expense=expense,
+            categories=CATEGORIES,
+            today=today,
+        )
+
+    raw_amount = request.form.get("amount", "").strip()
+    raw_category = request.form.get("category", "").strip()
+    raw_date = request.form.get("date", "").strip()
+    raw_description = request.form.get("description", "").strip()
+
+    def rerender(message):
+        return render_template(
+            "edit_expense.html",
+            expense=expense,
+            categories=CATEGORIES,
+            today=today,
+            error=message,
+            amount=raw_amount,
+            category=raw_category,
+            date=raw_date,
+            description=raw_description,
+        )
+
+    amount, category, parsed_date, description, error = _validate_expense_form(
+        raw_amount, raw_category, raw_date, raw_description
+    )
+    if error:
+        return rerender(error)
+
+    update_expense(
+        expense_id, user_id, amount, category, parsed_date.isoformat(), description
+    )
+    flash("Expense updated.", "success")
+    return redirect(url_for("profile"))
 
 
 @app.route("/expenses/<int:id>/delete")

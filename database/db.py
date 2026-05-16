@@ -45,23 +45,23 @@ def seed_db():
 
     conn.execute(
         "INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)",
-        ("Demo User", "demo@spendly.com", generate_password_hash("demo123"))
+        ("Demo User", "demo@spendly.com", generate_password_hash("demo123")),
     )
     user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
     expenses = [
-        (user_id, 450.00,  "Food",          "2026-04-01", "Lunch at canteen"),
-        (user_id, 120.00,  "Transport",     "2026-04-03", "Auto rickshaw"),
-        (user_id, 1800.00, "Bills",         "2026-04-05", "Electricity bill"),
-        (user_id, 300.00,  "Health",        "2026-04-08", "Pharmacy"),
-        (user_id, 599.00,  "Entertainment", "2026-04-12", "OTT subscription"),
-        (user_id, 2200.00, "Shopping",      "2026-04-15", "Clothes"),
-        (user_id, 85.00,   "Other",         "2026-04-18", "Stationery"),
-        (user_id, 650.00,  "Food",          "2026-04-22", "Dinner with friends"),
+        (user_id, 450.00, "Food", "2026-04-01", "Lunch at canteen"),
+        (user_id, 120.00, "Transport", "2026-04-03", "Auto rickshaw"),
+        (user_id, 1800.00, "Bills", "2026-04-05", "Electricity bill"),
+        (user_id, 300.00, "Health", "2026-04-08", "Pharmacy"),
+        (user_id, 599.00, "Entertainment", "2026-04-12", "OTT subscription"),
+        (user_id, 2200.00, "Shopping", "2026-04-15", "Clothes"),
+        (user_id, 85.00, "Other", "2026-04-18", "Stationery"),
+        (user_id, 650.00, "Food", "2026-04-22", "Dinner with friends"),
     ]
     conn.executemany(
         "INSERT INTO expenses (user_id, amount, category, date, description) VALUES (?, ?, ?, ?, ?)",
-        expenses
+        expenses,
     )
     conn.commit()
     conn.close()
@@ -110,3 +110,26 @@ def create_expense(user_id, amount, category, date, description):
     expense_id = cursor.lastrowid
     conn.close()
     return expense_id
+
+
+def get_expense_by_id(expense_id):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id, user_id, amount, category, date, description "
+        "FROM expenses WHERE id = ?",
+        (expense_id,),
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def update_expense(expense_id, user_id, amount, category, date, description):
+    conn = get_db()
+    result = conn.execute(
+        "UPDATE expenses SET amount=?, category=?, date=?, description=? "
+        "WHERE id = ? AND user_id = ?",
+        (amount, category, date, description, expense_id, user_id),
+    )
+    conn.commit()
+    conn.close()
+    return result.rowcount

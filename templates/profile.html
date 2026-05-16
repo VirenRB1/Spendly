@@ -62,6 +62,7 @@
                             <span class="profile-tx-desc">{{ tx.description or tx.category }}</span>
                             <span class="profile-tx-cat">{{ tx.category }}</span>
                             <span class="profile-tx-amount">&#8377;{{ "%.2f"|format(tx.amount) }}</span>
+                            <a href="{{ url_for('edit_expense', expense_id=tx.id) }}" class="profile-tx-edit">Edit</a>
                         </div>
                     {% if loop.last %}
                     </div>
